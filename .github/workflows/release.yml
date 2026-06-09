@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset_os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset_os: linux-x64
+            arch: x64
+          - os: ubuntu-latest
+            asset_os: linux-x86
+            arch: x86
+          - os: windows-latest
+            asset_os: windows-x64
+            arch: x64
+          - os: windows-latest
+            asset_os: windows-x86
+            arch: Win32
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux x86 dependencies
+        if: runner.os == 'Linux' && matrix.arch == 'x86'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib
+
+      - name: Configure Linux x64
+        if: runner.os == 'Linux' && matrix.arch == 'x64'
+        shell: bash
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure Linux x86
+        if: runner.os == 'Linux' && matrix.arch == 'x86'
+        shell: bash
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_FLAGS=-m32
+          -DCMAKE_EXE_LINKER_FLAGS=-m32
+
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A ${{ matrix.arch }}
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Package Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p package dist
+          cp build/fm350gl-at-dialer package/
+          cp README.md LICENSE package/
+          tar -czf "dist/fm350gl-at-dialer-${GITHUB_REF_NAME}-${{ matrix.asset_os }}.tar.gz" -C package .
+
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package, dist | Out-Null
+          $exe = Get-ChildItem -Path build -Recurse -Filter fm350gl-at-dialer.exe | Select-Object -First 1
+          if (-not $exe) {
+            throw "fm350gl-at-dialer.exe was not found under build/"
+          }
+          Copy-Item -LiteralPath $exe.FullName -Destination package/
+          Copy-Item -LiteralPath README.md, LICENSE -Destination package/
+          Compress-Archive -Path package/* -DestinationPath "dist/fm350gl-at-dialer-${env:GITHUB_REF_NAME}-${{ matrix.asset_os }}.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fm350gl-at-dialer-${{ matrix.asset_os }}
+          path: dist/*
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes
+          fi
