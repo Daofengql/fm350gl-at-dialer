@@ -65,6 +65,11 @@ fm350gl-at-dialer --auto-dial --port COM5 --interface "Ethernet 2" --dry-run
 - The tool name intentionally says `AT dialer` instead of `PPPoE`; the original
   scripts use AT commands and host interface configuration, not a PPPoE session.
 
+## License
+
+This project is released under the Unlicense. You may use, copy, modify,
+publish, distribute, and sell it for commercial or non-commercial purposes.
+
 ## Repository layout
 
 ```text
