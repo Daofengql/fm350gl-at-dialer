@@ -1,0 +1,12 @@
+build/
+cmake-build-*/
+*.user
+*.exe
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+*.pdb
+*.ilk
+.DS_Store
